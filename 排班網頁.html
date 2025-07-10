@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧排班系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        /* 避免 TailwindCSS 初始化的閃爍 */
+        body { visibility: hidden; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // 頁面載入後顯示內容
+        document.body.style.visibility = 'visible';
+
+        const { useState, useEffect, useCallback } = React;
+
+        // --- Icon Components (Replacing lucide-react) ---
+        const Icon = ({ className, children }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
+        const ChevronLeft = () => <Icon><path d="m15 18-6-6 6-6"/></Icon>;
+        const ChevronRight = () => <Icon><path d="m9 18 6-6-6-6"/></Icon>;
+        const UserPlus = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></Icon>;
+        const Settings = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></Icon>;
+        const Download = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Icon>;
+        const CalendarIcon = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></Icon>;
+        const Users = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Icon>;
+        const DollarSign = ({size=18}) => <Icon className={`w-[${size}px] h-[${size}px]`}><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></Icon>;
+
+        // --- 初始資料設定 ---
+        const INITIAL_EMPLOYEES = [
+            { id: 'e1', name: 'Amy', type: '正職', role: '只能內場' }, { id: 'e2', name: 'Allen', type: '正職', role: '只能內場' }, { id: 'e3', name: 'Andy', type: '兼職', role: '只能內場' }, { id: 'e4', name: 'Jerry', type: '兼職', role: '只能內場' }, { id: 'e5', name: 'John', type: '正職', role: '只能外場' }, { id: 'e6', name: 'Joe', type: '兼職', role: '只能外場' }, { id: 'e7', name: 'Helen', type: '兼職', role: '只能外場' }, { id: 'e8', name: 'Yoyo', type: '兼職', role: '只能外場' }, { id: 'e9', name: 'Taco', type: '正職', role: '都可以' }, { id: 'e10', name: 'Irene', type: '正職', role: '都可以' }, { id: 'e11', name: 'Faker', type: '正職', role: '都可以' }, { id: 'e12', name: 'Joeman', type: '兼職', role: '都可以' }, { id: 'e13', name: 'Hook', type: '兼職', role: '都可以' }, { id: 'e14', name: 'Gaga', type: '兼職', role: '都可以' }, { id: 'e15', name: 'Williy', type: '兼職', role: '都可以' }, { id: 'e16', name: 'Vicky', type: '兼職', role: '都可以' }, { id: 'e17', name: 'Wennie', type: '兼職', role: '都可以' }, { id: 'e18', name: 'Wendy', type: '兼職', role: '都可以' }, { id: 'e19', name: 'Fofo', type: '兼職', role: '都可以' },
+        ];
+
+        const INITIAL_REQUIREMENTS = {
+            weekday: { morning: { kitchen: 3, foh: 2 }, evening: { kitchen: 3, foh: 3 } },
+            weekend: { morning: { kitchen: 4, foh: 4 }, evening: { kitchen: 4, foh: 6 } },
+        };
+
+        const PAYROLL_RATES = {
+            fullTimeSalary: 35000, partTimeWeekdayRate: 190, partTimeWeekendRate: 200,
+        };
+        const TAIWAN_HOLIDAYS = {
+            2024: ['2024-01-01', '2024-02-08', '2024-02-09', '2024-02-10', '2024-02-11', '2024-02-12', '2024-02-13', '2024-02-14', '2024-02-28', '2024-04-04', '2024-04-05', '2024-06-10', '2024-09-17', '2024-10-10'],
+            2025: ['2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-01', '2025-02-02', '2025-02-28', '2025-04-04', '2025-04-05', '2025-05-01', '2025-05-30', '2025-09-08', '2025-10-10'],
+        };
+
+        const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+        const getDayInfo = (year, month, day) => {
+            const date = new Date(year, month, day);
+            const dayOfWeek = date.getDay();
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isHoliday = TAIWAN_HOLIDAYS[year]?.includes(dateStr);
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6 || isHoliday;
+            return { dayOfWeek, isWeekend };
+        };
+
+        const Modal = ({ children, onClose }) => (
+            <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="p-6 relative">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                        {children}
+                    </div>
+                </div>
+            </div>
+        );
+
+        const EmployeeEditor = ({ employees, setEmployees, onClose }) => {
+            const [tempEmployees, setTempEmployees] = useState(JSON.parse(JSON.stringify(employees)));
+
+            const handleAdd = () => setTempEmployees([...tempEmployees, { id: `new_${Date.now()}`, name: '新員工', type: '兼職', role: '都可以' }]);
+            const handleRemove = (id) => setTempEmployees(tempEmployees.filter(emp => emp.id !== id));
+            const handleUpdate = (id, field, value) => setTempEmployees(tempEmployees.map(emp => emp.id === id ? { ...emp, [field]: value } : emp));
+            const handleSave = () => { setEmployees(tempEmployees); onClose(); };
+
+            return (
+                <Modal onClose={onClose}>
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">編輯員工清單</h2>
+                    <div className="space-y-4">
+                        {tempEmployees.map(emp => (
+                            <div key={emp.id} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-3 border rounded-lg items-center">
+                                <input value={emp.name} onChange={e => handleUpdate(emp.id, 'name', e.target.value)} className="p-2 border rounded-md" />
+                                <select value={emp.type} onChange={e => handleUpdate(emp.id, 'type', e.target.value)} className="p-2 border rounded-md"><option>正職</option><option>兼職</option></select>
+                                <select value={emp.role} onChange={e => handleUpdate(emp.id, 'role', e.target.value)} className="p-2 border rounded-md"><option>都可以</option><option>只能內場</option><option>只能外場</option></select>
+                                <button onClick={() => handleRemove(emp.id)} className="bg-red-500 text-white px-3 py-2 rounded-md hover:bg-red-600">移除</button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-6 flex justify-between">
+                        <button onClick={handleAdd} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 flex items-center gap-2"><UserPlus />新增員工</button>
+                        <button onClick={handleSave} className="bg-green-500 text-white px-6 py-2 rounded-md hover:bg-green-600">儲存變更</button>
+                    </div>
+                </Modal>
+            );
+        };
+
+        const RequirementsEditor = ({ requirements, setRequirements, onClose }) => {
+            const [tempReqs, setTempReqs] = useState(JSON.parse(JSON.stringify(requirements)));
+            const handleUpdate = (dayType, shift, role, value) => {
+                const val = Math.max(0, parseInt(value, 10) || 0);
+                setTempReqs(prev => ({ ...prev, [dayType]: { ...prev[dayType], [shift]: { ...prev[dayType][shift], [role]: val }}}));
+            };
+            const handleSave = () => { setRequirements(tempReqs); onClose(); };
+
+            const renderInputs = (dayType, title, color) => (
+                <div>
+                    <h3 className={`text-lg font-bold mb-3 ${color} border-b pb-2`}>{title}</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 className="font-semibold text-gray-700 mb-2">早班 (10:00-16:30)</h4>
+                            <label className="block text-sm">內場: <input type="number" value={tempReqs[dayType].morning.kitchen} onChange={e => handleUpdate(dayType, 'morning', 'kitchen', e.target.value)} className="w-16 p-1 border rounded-md ml-2" /></label>
+                            <label className="block text-sm mt-2">外場: <input type="number" value={tempReqs[dayType].morning.foh} onChange={e => handleUpdate(dayType, 'morning', 'foh', e.target.value)} className="w-16 p-1 border rounded-md ml-2" /></label>
+                        </div>
+                        <div>
+                            <h4 className="font-semibold text-gray-700 mb-2">晚班 (17:30-22:00)</h4>
+                            <label className="block text-sm">內場: <input type="number" value={tempReqs[dayType].evening.kitchen} onChange={e => handleUpdate(dayType, 'evening', 'kitchen', e.target.value)} className="w-16 p-1 border rounded-md ml-2" /></label>
+                            <label className="block text-sm mt-2">外場: <input type="number" value={tempReqs[dayType].evening.foh} onChange={e => handleUpdate(dayType, 'evening', 'foh', e.target.value)} className="w-16 p-1 border rounded-md ml-2" /></label>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <Modal onClose={onClose}>
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">編輯人力需求</h2>
+                    <div className="space-y-6">
+                        {renderInputs('weekday', '平日需求', 'text-indigo-600')}
+                        {renderInputs('weekend', '假日/國定假日需求', 'text-teal-600')}
+                    </div>
+                    <div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-green-500 text-white px-6 py-2 rounded-md hover:bg-green-600">儲存變更</button></div>
+                </Modal>
+            );
+        };
+
+        function App() {
+            const [currentDate, setCurrentDate] = useState(new Date(2024, 7));
+            const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
+            const [requirements, setRequirements] = useState(INITIAL_REQUIREMENTS);
+            const [schedule, setSchedule] = useState({});
+            const [payroll, setPayroll] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [notifications, setNotifications] = useState([]);
+            const [isEmployeeModalOpen, setEmployeeModalOpen] = useState(false);
+            const [isReqModalOpen, setReqModalOpen] = useState(false);
+
+            const generateSchedule = useCallback(() => {
+                setIsLoading(true);
+                setNotifications([]);
+
+                setTimeout(() => {
+                    const year = currentDate.getFullYear();
+                    const month = currentDate.getMonth();
+                    const daysInMonth = getDaysInMonth(year, month);
+                    let newNotifications = [];
+                    let empData = JSON.parse(JSON.stringify(employees)).map(e => ({ ...e, schedule: Array(daysInMonth + 1).fill(null) }));
+
+                    const fullTimers = empData.filter(e => e.type === '正職');
+                    const partTimers = empData.filter(e => e.type === '兼職');
+
+                    fullTimers.forEach(emp => {
+                        let offDaysNeeded = 8;
+                        for (let week = 0; week < 5; week++) {
+                            const startDay = week * 7 + 1;
+                            if (startDay > daysInMonth) break;
+                            const endDay = Math.min(startDay + 6, daysInMonth);
+                            const dayToRest = Math.floor(Math.random() * (endDay - startDay + 1)) + startDay;
+                            emp.schedule[dayToRest] = '休';
+                        }
+                        let assignedOffDays = emp.schedule.filter(s => s === '休').length;
+                        let attempts = 0;
+                        while (assignedOffDays < offDaysNeeded && attempts < 200) {
+                            const randomDay = Math.floor(Math.random() * daysInMonth) + 1;
+                            if (emp.schedule[randomDay] === null) { emp.schedule[randomDay] = '休'; assignedOffDays++; }
+                            attempts++;
+                        }
+                    });
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dayInfo = getDayInfo(year, month, day);
+                        const reqType = dayInfo.isWeekend ? 'weekend' : 'weekday';
+                        const dailyReqs = requirements[reqType];
+                        const shifts = [
+                            { name: '早', needs: dailyReqs.morning, role: '內', slot: 'kitchen', canWork: e => e.role !== '只能外場' }, { name: '早', needs: dailyReqs.morning, role: '外', slot: 'foh', canWork: e => e.role !== '只能內場' }, { name: '晚', needs: dailyReqs.evening, role: '內', slot: 'kitchen', canWork: e => e.role !== '只能外場' }, { name: '晚', needs: dailyReqs.evening, role: '外', slot: 'foh', canWork: e => e.role !== '只能內場' },
+                        ];
+                        
+                        shifts.forEach(shift => {
+                            const shiftName = `${shift.name}-${shift.role}`;
+                            let needed = shift.needs[shift.slot];
+                            let assignedCount = empData.filter(e => e.schedule[day] === shiftName).length;
+                            
+                            fullTimers.sort(() => Math.random() - 0.5).forEach(emp => {
+                                if (assignedCount < needed && emp.schedule[day] === null && shift.canWork(emp)) {
+                                    let consecutive = 0;
+                                    for (let i = day - 1; i > 0 && i > day - 7; i--) { if (emp.schedule[i] && emp.schedule[i] !== '休') consecutive++; else break; }
+                                    if(consecutive < 6) { emp.schedule[day] = shiftName; assignedCount++; }
+                                }
+                            });
+
+                            partTimers.sort((a,b) => (a.workHours || 0) - (b.workHours || 0)).forEach(emp => {
+                                if (assignedCount < needed && emp.schedule[day] === null && shift.canWork(emp)) {
+                                    let consecutive = 0;
+                                    for (let i = day - 1; i > 0 && i > day - 6; i--) { if (emp.schedule[i] && emp.schedule[i] !== '休') consecutive++; else break; }
+                                    if(consecutive < 5) { emp.schedule[day] = shiftName; assignedCount++; }
+                                }
+                            });
+
+                            if (assignedCount < needed) {
+                                newNotifications.push({ type: 'warning', message: `${month+1}/${day} ${shiftName} 缺少 ${needed - assignedCount} 人` });
+                            }
+                        });
+                    }
+
+                    empData.forEach(emp => {
+                        for (let day = 1; day <= daysInMonth; day++) { if (emp.schedule[day] === null) emp.schedule[day] = '休'; }
+                    });
+
+                    const finalSchedule = {};
+                    empData.forEach(e => finalSchedule[e.id] = e.schedule);
+
+                    const finalPayroll = empData.map(emp => {
+                        let workHours = { weekday: 0, weekend: 0 }, daysOff = 0, consecutiveWork = 0, maxConsecutiveWork = 0, weeklyWorkDays = Array(5).fill(0);
+                        
+                        for(let day = 1; day <= daysInMonth; day++) {
+                            const shift = emp.schedule[day];
+                            const weekIndex = Math.floor((day-1) / 7);
+                            if (shift !== '休') {
+                                consecutiveWork++; weeklyWorkDays[weekIndex]++;
+                                const hours = shift.startsWith('早') ? 6.5 : 4.5;
+                                const dayInfo = getDayInfo(year, month, day);
+                                if(dayInfo.isWeekend) workHours.weekend += hours; else workHours.weekday += hours;
+                            } else { daysOff++; maxConsecutiveWork = Math.max(maxConsecutiveWork, consecutiveWork); consecutiveWork = 0; }
+                        }
+                        maxConsecutiveWork = Math.max(maxConsecutiveWork, consecutiveWork);
+                        emp.workHours = workHours.weekday + workHours.weekend;
+
+                        let salary = 0, notes = [];
+                        if (emp.type === '正職') {
+                            salary = PAYROLL_RATES.fullTimeSalary;
+                            if (daysOff < 8) notes.push(`休假不足 (應休8天, 實休${daysOff}天)`);
+                            if (maxConsecutiveWork > 6) notes.push(`連續上班超過6天 (${maxConsecutiveWork}天)`);
+                            let consecutive6DayWeeks = 0;
+                            for (let i = 0; i < weeklyWorkDays.length - 1; i++) { if (weeklyWorkDays[i] >= 6 && weeklyWorkDays[i+1] >= 6) { consecutive6DayWeeks++; break; }}
+                            if(consecutive6DayWeeks > 0) notes.push('違反規則: 連續兩週上班6天');
+                        } else {
+                            salary = (workHours.weekday * PAYROLL_RATES.partTimeWeekdayRate) + (workHours.weekend * PAYROLL_RATES.partTimeWeekendRate);
+                            if (maxConsecutiveWork > 5) notes.push(`連續上班達${maxConsecutiveWork}天 (第6天起應算加班)`);
+                        }
+                        return { id: emp.id, name: emp.name, type: emp.type, totalHours: emp.workHours.toFixed(1), salary: Math.round(salary), notes: notes.join('; ') };
+                    });
+                    
+                    setSchedule(finalSchedule); setPayroll(finalPayroll); setNotifications(newNotifications); setIsLoading(false);
+                }, 100);
+            }, [currentDate, employees, requirements]);
+
+            useEffect(() => { generateSchedule(); }, [generateSchedule]);
+
+            const handleMonthChange = (offset) => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+
+            const handleExport = (type) => {
+                if (typeof XLSX === 'undefined' || typeof saveAs === 'undefined') { alert("功能正在載入中，請稍後再試。"); return; }
+                const year = currentDate.getFullYear(), month = currentDate.getMonth(), daysInMonth = getDaysInMonth(year, month);
+                const wb = XLSX.utils.book_new();
+                let ws, body, fileName;
+
+                if (type === 'schedule') {
+                    body = employees.map(emp => {
+                        const row = { "員工姓名": emp.name };
+                        for (let day = 1; day <= daysInMonth; day++) { row[`${day}`] = schedule[emp.id]?.[day] || ''; }
+                        return row;
+                    });
+                    ws = XLSX.utils.json_to_sheet(body);
+                    ws['!cols'] = [{wch:12}, ...Array(daysInMonth).fill({wch:6})];
+                    fileName = `${year}年${month+1}月班表.xlsx`;
+                } else if (type === 'payroll') {
+                    body = payroll.map(d => ({ "姓名": d.name, "職位": d.type, "總工時": d.totalHours, "預估薪資": d.salary, "備註": d.notes }));
+                    ws = XLSX.utils.json_to_sheet(body);
+                    ws['!cols'] = [{wch:12}, {wch:8}, {wch:10}, {wch:12}, {wch:40}];
+                    fileName = `${year}年${month+1}月薪資表.xlsx`;
+                }
+                XLSX.utils.book_append_sheet(wb, ws, "資料");
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+                function s2ab(s) {
+                    const buf = new ArrayBuffer(s.length);
+                    const view = new Uint8Array(buf);
+                    for (let i=0; i<s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                }
+                saveAs(new Blob([s2ab(wbout)],{type:"application/octet-stream"}), fileName);
+            };
+            
+            const daysInMonth = getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth());
+
+            return (
+                <div className="bg-gray-100 min-h-screen p-4 sm:p-6 lg:p-8 font-sans">
+                    <div className="max-w-7xl mx-auto">
+                        <header className="mb-6"><h1 className="text-4xl font-bold text-gray-800">智慧排班系統</h1><p className="text-gray-500 mt-2">可直接使用的排班網頁</p></header>
+                        <div className="bg-white p-4 rounded-xl shadow-lg mb-6 flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex items-center gap-2 sm:gap-4">
+                                <button onClick={() => handleMonthChange(-1)} className="p-2 rounded-full hover:bg-gray-100"><ChevronLeft /></button>
+                                <span className="text-xl font-semibold w-40 sm:w-48 text-center">{`${currentDate.getFullYear()} 年 ${currentDate.getMonth() + 1} 月`}</span>
+                                <button onClick={() => handleMonthChange(1)} className="p-2 rounded-full hover:bg-gray-100"><ChevronRight /></button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <button onClick={generateSchedule} disabled={isLoading} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 disabled:bg-indigo-300"><CalendarIcon />{isLoading ? '產生中...' : '重新整理'}</button>
+                                <button onClick={() => setEmployeeModalOpen(true)} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"><Users />員工</button>
+                                <button onClick={() => setReqModalOpen(true)} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"><Settings />需求</button>
+                            </div>
+                        </div>
+                        {notifications.length > 0 && <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-md"><h3 className="font-bold text-yellow-800">排班提示</h3><ul className="mt-2 list-disc list-inside text-sm text-yellow-700 max-h-32 overflow-y-auto">{notifications.map((n, i) => <li key={i}>{n.message}</li>)}</ul></div>}
+                        {isLoading ? <div className="text-center p-12 text-gray-500">正在運算最佳班表...</div> :
+                        <div className="space-y-8">
+                            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-lg">
+                                <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800">當月班表</h2><button onClick={() => handleExport('schedule')} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center gap-2"><Download />下載班表</button></div>
+                                <div className="overflow-x-auto"><table className="w-full border-collapse text-sm text-center"><thead><tr className="bg-gray-50"><th className="sticky left-0 bg-gray-50 p-3 font-semibold text-gray-600 border-b z-10">員工</th>{Array.from({ length: daysInMonth }, (_, i) => <th key={i+1} className={`p-2 font-semibold border-b border-l ${getDayInfo(currentDate.getFullYear(), currentDate.getMonth(), i+1).isWeekend ? 'text-red-600' : 'text-gray-600'}`}>{i + 1}</th>)}</tr></thead>
+                                    <tbody>{employees.map(emp => (<tr key={emp.id} className="hover:bg-gray-50"><td className="sticky left-0 bg-white hover:bg-gray-50 p-2 font-medium border-b border-r whitespace-nowrap">{emp.name}<span className={`text-xs ${emp.type==='正職'?'text-blue-500':'text-green-500'}`}>({emp.type})</span></td>{Array.from({ length: daysInMonth }, (_, i) => { const day = i + 1; const shift = schedule[emp.id]?.[day]; let bgColor = 'bg-white'; if (shift === '休') bgColor = 'bg-gray-200'; else if (shift?.includes('早-內')) bgColor = 'bg-blue-100'; else if (shift?.includes('晚-內')) bgColor = 'bg-blue-200'; else if (shift?.includes('早-外')) bgColor = 'bg-yellow-100'; else if (shift?.includes('晚-外')) bgColor = 'bg-yellow-200'; return <td key={day} className={`p-2 border-b border-l ${bgColor}`}>{shift || ''}</td> })}</tr>))}</tbody>
+                                </table></div>
+                            </div>
+                            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-lg">
+                                <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800">薪資總覽</h2><button onClick={() => handleExport('payroll')} className="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 flex items-center gap-2"><DollarSign />下載薪資表</button></div>
+                                <div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="bg-gray-50"><th className="p-3 font-semibold text-gray-600">姓名</th><th className="p-3">職位</th><th className="p-3">總工時</th><th className="p-3">預估薪資</th><th className="p-3">備註</th></tr></thead>
+                                    <tbody>{payroll.map(data => (<tr key={data.id} className="border-b hover:bg-gray-50"><td className="p-3">{data.name}</td><td className="p-3">{data.type}</td><td className="p-3">{data.totalHours} 小時</td><td className="p-3">NT$ {data.salary.toLocaleString()}</td><td className="p-3 text-red-600 text-sm font-medium">{data.notes}</td></tr>))}</tbody>
+                                </table></div>
+                            </div>
+                        </div>}
+                    </div>
+                    {isEmployeeModalOpen && <EmployeeEditor employees={employees} setEmployees={setEmployees} onClose={() => setEmployeeModalOpen(false)} />}
+                    {isReqModalOpen && <RequirementsEditor requirements={requirements} setRequirements={setRequirements} onClose={() => setReqModalOpen(false)} />}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
